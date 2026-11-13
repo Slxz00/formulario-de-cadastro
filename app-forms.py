@@ -77,6 +77,11 @@ class CadastroClientesApp:
         self.var_email = tk.StringVar()
         self.var_telefone = tk.StringVar()
 
+        # Janela "Visualizar Clientes" (criada sob demanda)
+        self.janela_clientes = None
+        self.tree_clientes = None
+        self.lbl_total = None
+
         self._montar_formulario()
         self._montar_lista()
         self.atualizar_lista()
@@ -104,6 +109,9 @@ class CadastroClientesApp:
         botoes.grid(row=3, column=0, columnspan=2, pady=(10, 0), sticky="e")
         ttk.Button(botoes, text="Salvar", command=self.salvar).pack(side="left", padx=4)
         ttk.Button(botoes, text="Limpar", command=self.limpar).pack(side="left", padx=4)
+        ttk.Button(
+            botoes, text="Visualizar Clientes", command=self.visualizar_clientes
+        ).pack(side="left", padx=4)
 
         # Enter salva o cadastro
         self.root.bind("<Return>", lambda _event: self.salvar())
@@ -111,22 +119,26 @@ class CadastroClientesApp:
     def _montar_lista(self):
         frame = ttk.LabelFrame(self.root, text="Clientes cadastrados", padding=8)
         frame.pack(fill="both", expand=True, padx=12, pady=(6, 12))
+        self.tree = self._criar_treeview(frame, altura=8)
 
+    def _criar_treeview(self, parent, altura=8):
+        """Cria uma tabela (Treeview + barra de rolagem) de clientes dentro de 'parent'."""
         colunas = ("id", "nome", "email", "telefone")
-        self.tree = ttk.Treeview(frame, columns=colunas, show="headings", height=8)
+        tree = ttk.Treeview(parent, columns=colunas, show="headings", height=altura)
         for col, titulo, largura in (
             ("id", "ID", 50),
             ("nome", "Nome", 180),
             ("email", "E-mail", 200),
             ("telefone", "Telefone", 120),
         ):
-            self.tree.heading(col, text=titulo)
-            self.tree.column(col, width=largura, anchor="w" if col != "id" else "center")
+            tree.heading(col, text=titulo)
+            tree.column(col, width=largura, anchor="w" if col != "id" else "center")
 
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        return tree
 
     # ----- validação ------------------------------------------------------------
     def _validar(self):
@@ -188,13 +200,66 @@ class CadastroClientesApp:
         self.atualizar_lista()
         self.entry_nome.focus()
 
+    def visualizar_clientes(self):
+        """Abre uma nova janela com todos os clientes cadastrados no banco de dados."""
+        # Se a janela já estiver aberta, apenas a traz para frente e atualiza os dados
+        if self._janela_clientes_aberta():
+            self.janela_clientes.lift()
+            self.janela_clientes.focus_force()
+            self.atualizar_lista()
+            return
+
+        janela = tk.Toplevel(self.root)
+        janela.title("Visualizar Clientes")
+        janela.geometry("620x380")
+        janela.minsize(480, 280)
+        janela.transient(self.root)
+        self.janela_clientes = janela
+
+        frame = ttk.Frame(janela, padding=12)
+        frame.pack(fill="both", expand=True)
+
+        frame_tabela = ttk.Frame(frame)
+        frame_tabela.pack(fill="both", expand=True)
+        self.tree_clientes = self._criar_treeview(frame_tabela, altura=12)
+
+        rodape = ttk.Frame(frame)
+        rodape.pack(fill="x", pady=(10, 0))
+        self.lbl_total = ttk.Label(rodape, text="")
+        self.lbl_total.pack(side="left")
+        ttk.Button(rodape, text="Fechar", command=janela.destroy).pack(side="right")
+        ttk.Button(rodape, text="Atualizar", command=self.atualizar_lista).pack(
+            side="right", padx=4
+        )
+
+        self.atualizar_lista()
+
+    def _janela_clientes_aberta(self):
+        return self.janela_clientes is not None and self.janela_clientes.winfo_exists()
+
+    @staticmethod
+    def _preencher_tree(tree, clientes):
+        tree.delete(*tree.get_children())
+        for cliente in clientes:
+            tree.insert("", "end", values=cliente)
+
     def atualizar_lista(self):
-        self.tree.delete(*self.tree.get_children())
+        """Recarrega os dados do banco na lista principal e na janela de visualização (se aberta)."""
         try:
-            for cliente in listar_clientes():
-                self.tree.insert("", "end", values=cliente)
+            clientes = listar_clientes()
         except sqlite3.Error as exc:
             messagebox.showerror("Erro", f"Não foi possível carregar os clientes:\n{exc}")
+            return
+
+        self._preencher_tree(self.tree, clientes)
+
+        if self._janela_clientes_aberta():
+            self._preencher_tree(self.tree_clientes, clientes)
+            total = len(clientes)
+            if total == 0:
+                self.lbl_total.config(text="Nenhum cliente cadastrado.")
+            else:
+                self.lbl_total.config(text=f"Total de clientes: {total}")
 
 
 def main():
